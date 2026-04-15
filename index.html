@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Padre Rubén – Defensor del Corpus Domini</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#111;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:100vh;overflow:hidden;font-family:'Courier New',monospace;}
+canvas{display:block;image-rendering:pixelated;border:3px solid #C8A84B;box-shadow:0 0 30px #C8A84B88,0 0 60px #88660033;}
+#ft{color:#444;font-size:9px;margin-top:5px;letter-spacing:2px;text-transform:uppercase;}
+</style>
+</head>
+<body>
+<canvas id="c" width="800" height="480"></canvas>
+<div id="ft">Corpus Domini · Albariño 256 · Villa Luro · Buenos Aires · Est. 1934</div>
+<script>
+var cv=document.getElementById('c');
+var ctx=cv.getContext('2d');
+var W=800,H=480;
+var GY=385;      // ground Y (feet)
+var DX=370;      // door center X
+var DW=62;       // door width
+
+// ─── AUDIO ───────────────────────────────────────────────────
+var AC=null,masterG=null,musTimer=null,musOn=false;
+
+function initAudio(){
+  if(AC)return;
+  AC=new(window.AudioContext||window.webkitAudioContext)();
+  masterG=AC.createGain();masterG.gain.value=0.17;masterG.connect(AC.destination);
+}
+
+function tone(freq,type,dur,vol,delay){
+  vol=vol||0.4;delay=delay||0;
+  if(!AC)return;
+  var t=AC.currentTime+delay;
+  var o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.value=freq;
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(vol,t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.connect(g);g.connect(masterG);o.start(t);o.stop(t+dur+0.02);
+}
+
+function noise(dur,vol,delay){
+  vol=vol||0.12;delay=delay||0;
+  if(!AC)return;
+  var t=AC.currentTime+delay;
+  var sz=Math.ceil(AC.sampleRate*dur);
+  var buf=AC.createBuffer(1,sz,AC.sampleRate);
+  var d=buf.getChannelData(0);
+  for(var i=0;i<sz;i++)d[i]=(Math.random()*2-1)*(1-i/sz);
+  var s=AC.createBufferSource(),g=AC.createGain();
+  s.buffer=buf;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  s.connect(g);g.connect(masterG);s.start(t);
+}
+
+var SFX={
+  jump:function(){tone(260,'square',0.08,0.5);tone(380,'square',0.10,0.35);},
+  shoot:function(){tone(880,'square',0.05,0.35);tone(660,'sawtooth',0.06,0.2);},
+  hit:function(){tone(180,'sawtooth',0.09,0.5);noise(0.07,0.2);},
+  kill:function(){var n=[523,659,784,1047];for(var i=0;i<n.length;i++)tone(n[i],'square',0.12,0.45,i*0.045);},
+  hurt:function(){tone(110,'sawtooth',0.3,0.7);noise(0.14,0.35);},
+  enter:function(){tone(220,'sawtooth',0.4,0.8);tone(180,'sawtooth',0.4,0.6,0.05);},
+  over:function(){var n=[400,300,200,100];for(var i=0;i<n.length;i++)tone(n[i],'sawtooth',0.45,0.8,i*0.13);},
+  pu:function(){var n=[523,659,784,880,1047];for(var i=0;i<n.length;i++)tone(n[i],'triangle',0.18,0.5,i*0.055);},
+  boss:function(){tone(70,'sawtooth',1.0,0.9);tone(55,'square',0.9,0.7);}
+};
+
+// Music
+var MEL=[
+  [523,0.25],[659,0.25],[784,0.25],[659,0.25],[523,0.25],[392,0.25],[523,0.5],
+  [659,0.25],[784,0.25],[880,0.25],[784,0.25],[659,0.5],[523,0.25],[392,0.25],
+  [523,0.25],[659,0.25],[784,0.25],[659,0.25],[880,0.25],[784,0.25],[659,0.5],
+  [392,0.25],[523,0.25],[659,0.25],[523,0.25],[392,0.5],[329,0.5]
+];
+var BASS=[
+  [131,0.5],[165,0.5],[196,0.5],[165,0.5],[131,0.5],[98,0.5],[131,1],
+  [165,0.5],[196,0.5],[220,0.5],[196,0.5],[165,1],[131,0.5],[98,0.5]
+];
+var MEL_DUR=0;
+for(var _i=0;_i<MEL.length;_i++)MEL_DUR+=MEL[_i][1];
+
+function schedMusic(start){
+  if(!AC||!musOn)return;
+  var t=start;
+  for(var i=0;i<MEL.length;i++){
+    var f=MEL[i][0],d=MEL[i][1];
+    var o=AC.createOscillator(),g=AC.createGain();
+    o.type='square';o.frequency.value=f;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.08,t+0.01);
+    g.gain.setValueAtTime(0.08,t+d-0.04);g.gain.linearRampToValueAtTime(0,t+d);
+    o.connect(g);g.connect(masterG);o.start(t);o.stop(t+d+0.01);
+    t+=d;
+  }
+  var tb=start;
+  for(var r=0;r<2;r++){
+    for(var i=0;i<BASS.length;i++){
+      var f=BASS[i][0],d=BASS[i][1];
+      var o=AC.createOscillator(),g=AC.createGain();
+      o.type='triangle';o.frequency.value=f;
+      g.gain.setValueAtTime(0.04,tb);g.gain.setValueAtTime(0.04,tb+d-0.06);
+      g.gain.linearRampToValueAtTime(0,tb+d);
+      o.connect(g);g.connect(masterG);o.start(tb);o.stop(tb+d+0.01);
+      tb+=d;
+    }
+  }
+  for(var b=0;b<MEL_DUR;b+=0.5)noise(0.08,0.09,start+b-AC.currentTime);
+  for(var b=0;b<MEL_DUR;b+=0.25)noise(0.03,0.03,start+b-AC.currentTime);
+}
+
+function startMusic(){
+  if(!AC||musOn)return;musOn=true;
+  schedMusic(AC.currentTime+0.05);
+  function lp(){if(!musOn)return;schedMusic(AC.currentTime+0.1);musTimer=setTimeout(lp,(MEL_DUR-0.15)*1000);}
+  musTimer=setTimeout(lp,(MEL_DUR-0.15)*1000);
+}
+function stopMusic(){musOn=false;clearTimeout(musTimer);}
+
+// ─── INPUT ───────────────────────────────────────────────────
+var K={};
+document.addEventListener('keydown',function(e){
+  if(!K[e.code]){K[e.code]=true;onPress(e.code);}
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].indexOf(e.code)>=0)e.preventDefault();
+});
+document.addEventListener('keyup',function(e){K[e.code]=false;});
+
+function onPress(c){
+  if(gs==='intro'){
+    if(c==='Space'||c==='Enter'||c==='KeyZ'||c==='ArrowUp'){initAudio();startGame();}
+    return;
+  }
+  if(gs==='over'){
+    if(c==='Space'||c==='Enter'||c==='KeyZ'){initAudio();startGame();}
+    return;
+  }
+  if(gs!=='game')return;
+  if((c==='ArrowUp'||c==='KeyW'||c==='Space'||c==='KeyZ')&&P.onG){
+    P.vy=-13.5;P.onG=false;SFX.jump();
+  }
+  if((c==='KeyX'||c==='ControlLeft'||c==='ShiftLeft'||c==='ControlRight'||c==='ShiftRight')&&P.cd<=0){
+    doShoot();
+  }
+}
+
+// ─── STATE ───────────────────────────────────────────────────
+var gs='intro',score=0,doorHP=20,level=1,fc=0;
+var bossOut=false,boss=null;
+var shX=0,shY=0,shDur=0,shStr=0,flashT=0,doorFlash=0;
+
+// ─── PLAYER ──────────────────────────────────────────────────
+var P={x:370,y:GY,w:28,h:52,vx:0,vy:0,onG:false,facing:1,inv:0,wf:0,wt:0,cd:0,hp:5,maxHp:5};
+
+// ─── ARRAYS ──────────────────────────────────────────────────
+var projs=[],enemies=[],parts=[],pups=[];
+
+// ─── ENEMY TYPES ─────────────────────────────────────────────
+var ET={
+  borracho:{w:24,h:44,hp:2,spd:0.7,score:100,jmp:0.001,erratic:false,tanky:false,label:'Borracho'},
+  rapido:  {w:20,h:40,hp:1,spd:2.0,score:150,jmp:0.006,erratic:true, tanky:false,label:'Rápido'},
+  grandote:{w:36,h:58,hp:5,spd:0.45,score:300,jmp:0.0003,erratic:false,tanky:true,label:'Grandote'},
+  loco:    {w:22,h:42,hp:2,spd:1.3,score:200,jmp:0.004,erratic:true,tanky:false,label:'Loco'}
+};
+var TNAMES=['borracho','rapido','grandote','loco'];
+
+// ─── HELPERS ─────────────────────────────────────────────────
+function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h);}
+function hits(a,b){
+  var m=4;
+  return a.x+m<b.x+b.w-m&&a.x+a.w-m>b.x+m&&a.y+m<b.y+b.h&&a.y+a.h>b.y+m;
+}
+function doShake(str,dur){shStr=str;shDur=dur;}
+function spawnParts(x,y,col,n,spd){
+  n=n||8;spd=spd||3;
+  for(var i=0;i<n;i++){
+    var a=(Math.PI*2*i/n)+Math.random()*0.6;
+    parts.push({x:x,y:y,vx:Math.cos(a)*(spd+Math.random()*2),vy:Math.sin(a)*(spd+Math.random()*2)-1,
+      life:45+Math.random()*20,maxLife:65,col:col,sz:3+Math.random()*3});
+  }
+}
+
+function spawnEnemy(t){
+  var d=ET[t];
+  var left=Math.random()<0.5;
+  var sx=left?-d.w-10:W+10;
+  var lb=Math.floor(level*0.3);
+  var spd=d.spd+level*0.03;
+  enemies.push({
+    x:sx,y:GY,w:d.w,h:d.h,spd:spd,type:t,
+    vx:left?spd:-spd,vy:0,onG:false,
+    hp:d.hp+lb,maxHp:d.hp+lb,
+    score:d.score,erratic:d.erratic,tanky:d.tanky,
+    wf:0,wt:0,stun:0,flash:0,facing:left?1:-1,et:0
+  });
+}
+
+function spawnPup(x,y){
+  var ts=['cross','wine'];
+  pups.push({x:x,y:y-20,vy:-4,type:ts[Math.floor(Math.random()*2)],life:280,bob:0});
+}
+
+function spawnBoss(){
+  bossOut=true;SFX.boss();doShake(10,30);
+  boss={x:W+70,y:GY,w:60,h:80,vx:-1.2,vy:0,
+    hp:40+level*5,maxHp:40+level*5,phase:1,onG:false,
+    wf:0,wt:0,at:0,flash:0,facing:-1};
+}
+
+function doShoot(){
+  SFX.shoot();P.cd=16;
+  projs.push({x:P.x+(P.facing>0?P.w:-2),y:P.y+14,
+    vx:P.facing*11,vy:-0.8,rot:0,life:70,w:14,h:14});
+}
+
+// ─── GAME INIT ───────────────────────────────────────────────
+function startGame(){
+  score=0;doorHP=20;level=1;fc=0;
+  bossOut=false;boss=null;
+  enemies=[];projs=[];parts=[];pups=[];
+  P.x=370;P.y=GY;P.vx=0;P.vy=0;P.hp=5;P.inv=0;P.cd=0;P.wf=0;P.facing=1;
+  gs='game';startMusic();
+}
+
+function hurtPlayer(){
+  P.hp--;P.inv=80;flashT=15;SFX.hurt();doShake(6,14);
+  spawnParts(P.x+P.w/2,P.y+P.h/2,'#FF2200',6,3);
+  if(P.hp<=0){gs='over';SFX.over();stopMusic();}
+}
+
+function enemyHitsDoor(idx){
+  doorHP=Math.max(0,doorHP-1);
+  doorFlash=45;SFX.enter();doShake(8,18);
+  spawnParts(DX+DW/2,GY-20,'#FF0000',14,4);
+  enemies.splice(idx,1);
+  if(doorHP<=0){gs='over';SFX.over();stopMusic();}
+}
+
+function bossHitsDoor(){
+  doorHP=Math.max(0,doorHP-3);
+  doorFlash=60;SFX.enter();doShake(12,30);
+  spawnParts(DX+DW/2,GY-20,'#FF0000',20,5);
+  boss=null;
+  if(doorHP<=0){gs='over';SFX.over();stopMusic();}
+}
+
+function applyPup(t){
+  SFX.pu();
+  if(t==='cross'){score+=300;P.cd=0;}
+  if(t==='wine')P.hp=Math.min(P.maxHp,P.hp+1);
+}
+
+// ─── UPDATE ──────────────────────────────────────────────────
+function gameUpdate(){
+  level=1+Math.floor(score/2000);
+
+  if(shDur>0){shDur--;shX=(Math.random()-0.5)*shStr*(shDur/12);shY=(Math.random()-0.5)*shStr*(shDur/12);}
+  else{shX=0;shY=0;}
+  if(flashT>0)flashT--;
+  if(doorFlash>0)doorFlash--;
+
+  // Spawn enemies
+  var si=Math.max(60,210-level*20);
+  if(fc%si===0){
+    var wt=level<3?[5,2,1,1]:level<6?[2,4,2,3]:[1,3,3,5];
+    var tot=0;for(var i=0;i<wt.length;i++)tot+=wt[i];
+    var r=Math.random()*tot,idx=0;
+    for(var i=0;i<wt.length;i++){r-=wt[i];if(r<=0){idx=i;break;}}
+    spawnEnemy(TNAMES[idx]);
+    if(level>=5&&Math.random()<0.4)spawnEnemy(TNAMES[Math.floor(Math.random()*4)]);
+  }
+  if(!bossOut&&score>=5000)spawnBoss();
+
+  // Player movement
+  if(K['ArrowLeft']||K['KeyA']){P.vx=-3.8;P.facing=-1;}
+  else if(K['ArrowRight']||K['KeyD']){P.vx=3.8;P.facing=1;}
+  else P.vx*=0.78;
+
+  var held=['KeyX','ControlLeft','ShiftLeft','ControlRight','ShiftRight'];
+  for(var i=0;i<held.length;i++){if(K[held[i]]&&P.cd<=0){doShoot();break;}}
+
+  P.x=Math.max(8,Math.min(W-P.w-8,P.x+P.vx));
+  P.vy+=0.58;P.y+=P.vy;
+  if(P.y>=GY){P.y=GY;P.vy=0;P.onG=true;}else P.onG=false;
+  if(Math.abs(P.vx)>0.4&&P.onG){P.wt++;if(P.wt>6){P.wf=(P.wf+1)%4;P.wt=0;}}
+  else if(P.onG)P.wf=0;
+  if(P.cd>0)P.cd--;
+  if(P.inv>0)P.inv--;
+
+  // Projectiles
+  for(var i=projs.length-1;i>=0;i--){
+    var p=projs[i];
+    p.x+=p.vx;p.y+=p.vy;p.rot+=0.28;p.life--;
+    if(p.life<=0||p.x<-30||p.x>W+30){projs.splice(i,1);continue;}
+    var cont=false;
+    if(boss&&hits(p,boss)){
+      boss.hp--;boss.flash=8;SFX.hit();
+      spawnParts(p.x,p.y,'#FFD700',5,3);projs.splice(i,1);
+      if(boss.hp<=0){score+=4000;doShake(12,28);SFX.kill();
+        spawnParts(boss.x+boss.w/2,boss.y+boss.h/2,'#FFD700',18,5);
+        spawnPup(boss.x+boss.w/2,boss.y);boss=null;}
+      cont=true;
+    }
+    if(cont)continue;
+    for(var j=enemies.length-1;j>=0;j--){
+      var e=enemies[j];
+      if(!hits(p,e))continue;
+      e.hp--;e.flash=8;e.stun=12;SFX.hit();
+      spawnParts(p.x,p.y,'#FFD700',5,3);projs.splice(i,1);
+      if(e.hp<=0){score+=e.score;doShake(4,8);SFX.kill();
+        spawnParts(e.x+e.w/2,e.y+e.h/2,'#FF6600',10,4);
+        if(Math.random()<0.18)spawnPup(e.x+e.w/2,e.y);
+        enemies.splice(j,1);}
+      cont=true;break;
+    }
+    if(cont)continue;
+  }
+
+  // Enemies
+  var doorCx=DX+DW/2;
+  for(var i=enemies.length-1;i>=0;i--){
+    var e=enemies[i];
+    if(e.flash>0)e.flash--;
+    if(e.stun>0){e.stun--;continue;}
+    var toDoor=doorCx-(e.x+e.w/2);
+    if(e.erratic){
+      e.et--;
+      if(e.et<=0){
+        e.et=20+Math.floor(Math.random()*25);
+        e.vx=(Math.random()<0.8?(toDoor>0?1:-1):(Math.random()<0.5?-1:1))*e.spd;
+      }
+      e.facing=e.vx>0?1:-1;
+    } else {
+      e.vx=(toDoor>0?1:-1)*e.spd;
+      e.facing=toDoor>0?1:-1;
+    }
+    if(e.onG&&Math.random()<ET[e.type].jmp*(1+level*0.3)){e.vy=-10;e.onG=false;}
+    e.x+=e.vx;e.vy+=0.58;e.y+=e.vy;
+    if(e.y>=GY){e.y=GY;e.vy=0;e.onG=true;}
+    e.wt++;if(e.wt>6){e.wf=(e.wf+1)%4;e.wt=0;}
+    // Check door entry
+    if(Math.abs((e.x+e.w/2)-doorCx)<DW/2+e.w/2-6){
+      enemyHitsDoor(i);if(gs==='over')return;continue;
+    }
+    if(P.inv<=0&&hits(P,e))hurtPlayer();
+  }
+
+  // Boss
+  if(boss){
+    if(boss.flash>0)boss.flash--;
+    boss.at++;
+    if(boss.hp<boss.maxHp*0.5)boss.phase=2;
+    var bs=boss.phase===2?2.4:1.3;
+    var tD=doorCx-(boss.x+boss.w/2);
+    boss.vx=(tD>0?1:-1)*bs;boss.facing=boss.vx>0?1:-1;
+    if(boss.phase===2&&boss.at%110===0&&boss.onG){boss.vy=-15;boss.onG=false;}
+    boss.x=Math.max(0,Math.min(W-boss.w,boss.x+boss.vx));
+    boss.vy+=0.58;boss.y+=boss.vy;
+    if(boss.y>=GY){boss.y=GY;boss.vy=0;boss.onG=true;}
+    boss.wt++;if(boss.wt>5){boss.wf=(boss.wf+1)%4;boss.wt=0;}
+    if(Math.abs((boss.x+boss.w/2)-doorCx)<DW/2+boss.w/2-6){
+      bossHitsDoor();if(gs==='over')return;
+    }
+    if(boss&&P.inv<=0&&hits(P,boss))hurtPlayer();
+  }
+
+  // Powerups
+  for(var i=pups.length-1;i>=0;i--){
+    var pw=pups[i];pw.bob++;pw.vy+=0.32;pw.y+=pw.vy;
+    var fy=GY-28;if(pw.y>=fy){pw.y=fy;pw.vy*=-0.5;}
+    pw.life--;if(pw.life<=0){pups.splice(i,1);continue;}
+    if(Math.abs(pw.x-(P.x+P.w/2))<32&&Math.abs(pw.y-P.y)<55){
+      applyPup(pw.type);spawnParts(pw.x,pw.y,'#FFD700',10,4);pups.splice(i,1);
+    }
+  }
+
+  // Particles
+  for(var i=parts.length-1;i>=0;i--){
+    var p=parts[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.22;p.vx*=0.93;p.life--;
+    if(p.life<=0)parts.splice(i,1);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAWING – CORPUS DOMINI FACADE
+//  Based on real photos of Albariño 256, Villa Luro
+// ═══════════════════════════════════════════════════════════
+
+function drawSky(){
+  var g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#5B7FA6');
+  g.addColorStop(0.5,'#8BAFD0');
+  g.addColorStop(1,'#C8D8E8');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+}
+
+function drawTrees(){
+  // Left trees (plane trees / plátanos as in photo)
+  drawOneTree(95,GY+44,52,200);
+  drawOneTree(48,GY+44,38,170);
+  drawOneTree(148,GY+44,28,140);
+  // Right trees
+  drawOneTree(695,GY+44,50,195);
+  drawOneTree(748,GY+44,40,165);
+  drawOneTree(648,GY+44,32,145);
+}
+
+function drawOneTree(cx,base,tw,th){
+  // Trunk – mottled grey-white bark (plane tree characteristic)
+  ctx.fillStyle='#8A7A5A';
+  ctx.fillRect(cx-tw/2,base-th,tw,th);
+  // Bark patches
+  ctx.fillStyle='#A89A78';
+  for(var i=0;i<6;i++){
+    var py=base-th+i*(th/6)+10;
+    ctx.fillRect(cx-tw/2+2,py,tw-4,th/8);
+  }
+  ctx.fillStyle='#C8B88A';
+  for(var i=0;i<5;i++){
+    var py=base-th+i*(th/5)+5;
+    ctx.fillRect(cx-tw/2+tw*0.3,py,tw*0.3,th/10);
+  }
+  // Autumn foliage clusters
+  var leafColors=['#B85C0A88','#C87010AA','#A04808AA','#D48808AA','#8B4A0888'];
+  var branches=[
+    {dx:-40,dy:0.55,rx:55,ry:42},
+    {dx:35,dy:0.50,rx:50,ry:38},
+    {dx:-15,dy:0.35,rx:48,ry:36},
+    {dx:38,dy:0.30,rx:42,ry:32},
+    {dx:-30,dy:0.18,rx:38,ry:28},
+    {dx:10,dy:0.10,rx:35,ry:25}
+  ];
+  for(var i=0;i<branches.length;i++){
+    var b=branches[i];
+    var bx=cx+b.dx;
+    var by=base-th*b.dy;
+    ctx.fillStyle=leafColors[i%leafColors.length];
+    ctx.beginPath();ctx.ellipse(bx,by,b.rx,b.ry,Math.sin(i)*0.3,0,Math.PI*2);ctx.fill();
+  }
+  // A few stray branches
+  ctx.strokeStyle='#6A5838';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(cx,base-th*0.7);ctx.lineTo(cx-55,base-th*0.85);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,base-th*0.6);ctx.lineTo(cx+50,base-th*0.78);ctx.stroke();
+}
+
+function drawSideWings(){
+  // Left lower annexe
+  px(0,300,155,GY+44-300,'#B4ACA0');
+  px(0,298,157,4,'#A09890');
+  // Arched windows on left
+  drawArchWindow(18,330,38,56);
+  drawArchWindow(75,330,38,56);
+  // Right annexe (lower building as in photo)
+  px(645,310,W-645,GY+44-310,'#ACA49A');
+  px(643,308,W-643,4,'#988E84');
+  drawArchWindow(652,340,40,55);
+  drawArchWindow(712,340,40,55);
+  drawArchWindow(762,340,30,55);
+}
+
+function drawArchWindow(x,y,w,h){
+  // Wall inset
+  px(x,y,w,h,'#A09080');
+  // Glass (blue-grey)
+  ctx.fillStyle='#6A88A0';
+  ctx.fillRect(x+3,y+h/3,w-6,h*2/3);
+  ctx.beginPath();ctx.arc(x+w/2,y+h/3,w/2-3,Math.PI,0);ctx.fill();
+  // Frame
+  ctx.strokeStyle='#504840';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(x+w/2,y+h/3,w/2-3,Math.PI,0);
+  ctx.moveTo(x+3,y+h/3);ctx.lineTo(x+3,y+h);
+  ctx.moveTo(x+w-3,y+h/3);ctx.lineTo(x+w-3,y+h);
+  ctx.stroke();
+  // Divider
+  ctx.beginPath();ctx.moveTo(x+w/2,y+h/3-(w/2-3));ctx.lineTo(x+w/2,y+h);ctx.stroke();
+}
+
+function drawBellTower(){
+  // Tower body – taller, behind main facade
+  px(520,10,115,GY+44-10,'#C0BEB0');
+  // Left light strip
+  px(520,10,4,GY,'#D8D6C8');
+  // Right shadow
+  px(631,10,4,GY,'#A8A698');
+  // Belfry arched openings
+  drawArchWindow(540,45,75,90);
+  // Bell
+  px(566,75,22,18,'#C8A820');px(573,82,8,8,'#E8C830');
+  // Tower top pointed
+  ctx.fillStyle='#ACA898';
+  ctx.beginPath();ctx.moveTo(520,12);ctx.lineTo(635,12);ctx.lineTo(577,0);ctx.fill();
+  ctx.fillStyle='#989080';
+  ctx.beginPath();ctx.moveTo(520,12);ctx.lineTo(577,0);ctx.lineTo(577,12);ctx.fill();
+  // Cross on tower peak
+  px(573,0,8,22,'#7A0000');
+  px(563,7,28,7,'#7A0000');
+}
+
+function drawMainWall(){
+  // The main facade wall – light cream/grey as in photo
+  var wg=ctx.createLinearGradient(155,0,645,0);
+  wg.addColorStop(0,'#C8C6B4');
+  wg.addColorStop(0.25,'#D4D2C0');
+  wg.addColorStop(0.75,'#D0CEC0');
+  wg.addColorStop(1,'#C4C2B2');
+  ctx.fillStyle=wg;
+  ctx.fillRect(155,115,490,GY+44-115);
+  // Left pilaster
+  px(155,115,22,GY+44-115,'#C0BEB0');
+  px(155,115,4,GY+44-115,'#E0DECF');  // highlight
+  // Right pilaster
+  px(623,115,22,GY+44-115,'#B8B6A8');
+  px(639,115,4,GY+44-115,'#A8A6A0'); // shadow
+}
+
+function drawPediment(){
+  // Triangular gable – the main visual feature
+  ctx.fillStyle='#CCCAB8';
+  ctx.beginPath();ctx.moveTo(155,200);ctx.lineTo(400,95);ctx.lineTo(645,200);ctx.fill();
+  // Outline
+  ctx.strokeStyle='#A09A88';ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.moveTo(156,201);ctx.lineTo(400,96);ctx.lineTo(644,201);ctx.stroke();
+  // Inner shadow (gives depth)
+  ctx.fillStyle='rgba(0,0,0,0.06)';
+  ctx.beginPath();ctx.moveTo(165,200);ctx.lineTo(400,104);ctx.lineTo(635,200);ctx.fill();
+  // Small decorative cross at peak
+  px(396,88,8,20,'#8A7A5A');
+  px(387,95,26,7,'#8A7A5A');
+  // Decorative detail line at pediment base
+  px(155,198,490,5,'#B8B2A0');
+  // Three lunette arched windows in the pediment
+  drawArchWindow(260,128,58,55);
+  drawArchWindow(371,128,58,55);
+  drawArchWindow(482,128,58,55);
+  // Pilasters flanking the pediment
+  px(215,198,18,42,'#C4C0B0');
+  px(567,198,18,42,'#C4C0B0');
+}
+
+function drawRosette(){
+  // The iconic Star of David rosette window
+  var rX=400,rY=263,rR=60;
+  // Outer decorative ring
+  ctx.fillStyle='#B4B2A4';
+  ctx.beginPath();ctx.arc(rX,rY,rR+10,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#C8C4B4';
+  ctx.beginPath();ctx.arc(rX,rY,rR+5,0,Math.PI*2);ctx.fill();
+  // Decorative moulding ring
+  ctx.strokeStyle='#A09888';ctx.lineWidth=3;
+  ctx.beginPath();ctx.arc(rX,rY,rR+3,0,Math.PI*2);ctx.stroke();
+  ctx.strokeStyle='#888078';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(rX,rY,rR+1,0,Math.PI*2);ctx.stroke();
+  // Window glass (blue-grey, darker)
+  ctx.fillStyle='#5A7888';
+  ctx.beginPath();ctx.arc(rX,rY,rR,0,Math.PI*2);ctx.fill();
+  // Star of David – two overlapping equilateral triangles (exactly as in real photo)
+  var r=rR*0.80;
+  ctx.strokeStyle='#D0C8A8';ctx.lineWidth=5;ctx.lineJoin='round';
+  // Triangle 1 – pointing up
+  ctx.beginPath();
+  ctx.moveTo(rX+Math.cos(-Math.PI/2)*r,          rY+Math.sin(-Math.PI/2)*r);
+  ctx.lineTo(rX+Math.cos(-Math.PI/2+2*Math.PI/3)*r, rY+Math.sin(-Math.PI/2+2*Math.PI/3)*r);
+  ctx.lineTo(rX+Math.cos(-Math.PI/2+4*Math.PI/3)*r, rY+Math.sin(-Math.PI/2+4*Math.PI/3)*r);
+  ctx.closePath();ctx.stroke();
+  // Triangle 2 – pointing down
+  ctx.beginPath();
+  ctx.moveTo(rX+Math.cos(Math.PI/2)*r,           rY+Math.sin(Math.PI/2)*r);
+  ctx.lineTo(rX+Math.cos(Math.PI/2+2*Math.PI/3)*r,  rY+Math.sin(Math.PI/2+2*Math.PI/3)*r);
+  ctx.lineTo(rX+Math.cos(Math.PI/2+4*Math.PI/3)*r,  rY+Math.sin(Math.PI/2+4*Math.PI/3)*r);
+  ctx.closePath();ctx.stroke();
+  // Thinner inner lines for the lattice detail
+  ctx.strokeStyle='#C8C0A0';ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(rX+Math.cos(-Math.PI/2)*r,          rY+Math.sin(-Math.PI/2)*r);
+  ctx.lineTo(rX+Math.cos(-Math.PI/2+2*Math.PI/3)*r, rY+Math.sin(-Math.PI/2+2*Math.PI/3)*r);
+  ctx.lineTo(rX+Math.cos(-Math.PI/2+4*Math.PI/3)*r, rY+Math.sin(-Math.PI/2+4*Math.PI/3)*r);
+  ctx.closePath();ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(rX+Math.cos(Math.PI/2)*r,           rY+Math.sin(Math.PI/2)*r);
+  ctx.lineTo(rX+Math.cos(Math.PI/2+2*Math.PI/3)*r,  rY+Math.sin(Math.PI/2+2*Math.PI/3)*r);
+  ctx.lineTo(rX+Math.cos(Math.PI/2+4*Math.PI/3)*r,  rY+Math.sin(Math.PI/2+4*Math.PI/3)*r);
+  ctx.closePath();ctx.stroke();
+  // Center hub
+  ctx.fillStyle='#6A88A0';
+  ctx.beginPath();ctx.arc(rX,rY,10,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#C0B890';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(rX,rY,10,0,Math.PI*2);ctx.stroke();
+  // Six spokes radiating from center
+  ctx.strokeStyle='#B0A888';ctx.lineWidth=1.5;
+  for(var i=0;i<6;i++){
+    var a=i*Math.PI/3;
+    ctx.beginPath();
+    ctx.moveTo(rX+Math.cos(a)*10,rY+Math.sin(a)*10);
+    ctx.lineTo(rX+Math.cos(a)*(rR-2),rY+Math.sin(a)*(rR-2));
+    ctx.stroke();
+  }
+}
+
+function drawPorch(){
+  // Porch base – projects slightly from wall
+  px(282,316,236,80,'#CCCAB8');
+  // Mini pediment over porch
+  ctx.fillStyle='#C8C6B4';
+  ctx.beginPath();ctx.moveTo(282,316);ctx.lineTo(400,278);ctx.lineTo(518,316);ctx.fill();
+  ctx.strokeStyle='#A09888';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(282,317);ctx.lineTo(400,279);ctx.lineTo(518,317);ctx.stroke();
+  // Inscription inside porch pediment (as in real photo: "CORPUS DOMINI PARROQUIA")
+  ctx.fillStyle='#706858';ctx.font='bold 8px "Courier New",monospace';ctx.textAlign='center';
+  ctx.fillText('CORPUS DOMINI',400,302);
+  ctx.fillStyle='#706858';ctx.font='7px "Courier New",monospace';
+  ctx.fillText('PARROQUIA',400,313);
+  ctx.textAlign='left';
+  // Side pilasters of porch
+  px(282,316,18,80,'#C4C0B0');px(282,316,4,80,'#D8D4C4');
+  px(500,316,18,80,'#C0BCB0');
+  // Small lanterns (as visible in photo)
+  ctx.fillStyle='#8A7A5A';ctx.fillRect(275,318,8,18);ctx.fillRect(517,318,8,18);
+  ctx.fillStyle='#FFE888';ctx.fillRect(276,314,6,8);ctx.fillRect(518,314,6,8);
+  // Lantern glow
+  ctx.fillStyle='rgba(255,230,100,0.25)';
+  ctx.beginPath();ctx.arc(279,318,14,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(521,318,14,0,Math.PI*2);ctx.fill();
+  // Notice board left of door
+  px(292,355,32,34,'#8A8070');
+  px(294,357,28,30,'#F0EAD8');
+  ctx.fillStyle='#666';ctx.font='5px monospace';ctx.textAlign='left';
+  ctx.fillText('MISA',296,366);ctx.fillText('LUN-VIE',296,374);ctx.fillText('19:00 h',296,382);
+}
+
+function drawDoor(){
+  var df=doorFlash>0?Math.min(1,doorFlash/25):0;
+  // Door surround
+  px(DX-5,333,DW+10,GY+44-333,'#B0A898');
+  // Door color – dark as in photo, flashes red on entry
+  var dr=Math.round(26+150*df),dg=Math.round(18*(1-df)),db=Math.round(10*(1-df));
+  var dc='rgb('+dr+','+dg+','+db+')';
+  // Door body
+  px(DX,336,DW,GY+44-336,dc);
+  // Arched top
+  ctx.fillStyle=dc;
+  ctx.beginPath();ctx.arc(DX+DW/2,336,DW/2,Math.PI,0);ctx.fill();
+  // Frame
+  ctx.strokeStyle='#706050';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(DX+DW/2,336,DW/2,Math.PI,0);
+  ctx.moveTo(DX,336);ctx.lineTo(DX,GY+44);
+  ctx.moveTo(DX+DW,336);ctx.lineTo(DX+DW,GY+44);
+  ctx.stroke();
+  // Panel divisions (two door halves)
+  ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=1;
+  ctx.strokeRect(DX+2,340,DW/2-4,GY+40-340);
+  ctx.strokeRect(DX+DW/2+2,340,DW/2-4,GY+40-340);
+  // Knobs
+  px(DX+DW/2-5,368,5,5,'#C8A820');
+  px(DX+DW/2+1,368,5,5,'#C8A820');
+  // Alarm glow when breached
+  if(df>0){
+    ctx.shadowColor='#FF0000';ctx.shadowBlur=28*df;
+    ctx.strokeStyle='rgba(255,0,0,'+df+')';ctx.lineWidth=4;
+    ctx.beginPath();ctx.arc(DX+DW/2,336,DW/2+6,Math.PI,0);
+    ctx.moveTo(DX-6,336);ctx.lineTo(DX-6,GY+48);
+    ctx.moveTo(DX+DW+6,336);ctx.lineTo(DX+DW+6,GY+48);
+    ctx.stroke();ctx.shadowBlur=0;
+  }
+  // Sanctity/door health bar above door
+  var bx=DX-22,by=316,bw=DW+44,bh=9;
+  ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(bx-2,by-2,bw+4,bh+4);
+  px(bx,by,bw,bh,'#440000');
+  var fill=Math.round(bw*doorHP/20);
+  var bc=doorHP>12?'#00BB00':doorHP>6?'#FFAA00':'#FF2200';
+  px(bx,by,fill,bh,bc);
+  px(bx,by,fill,4,doorHP>12?'#44FF44':doorHP>6?'#FFDD44':'#FF7766');
+  ctx.fillStyle='#FFF';ctx.font='bold 8px monospace';ctx.textAlign='center';
+  ctx.fillText('✟ SANTIDAD: '+doorHP+'/20',DX+DW/2,by+bh+11);
+  ctx.textAlign='left';
+}
+
+function drawGround(){
+  // Sidewalk
+  px(0,GY+44,W,16,'#B0A898');
+  ctx.fillStyle='#C4B8A8';
+  for(var tx=0;tx<W;tx+=28)ctx.fillRect(tx,GY+44,26,14);
+  px(0,GY+44,W,3,'#D0C8B8');
+  px(0,GY+57,W,4,'#988E80');
+  // Road cobblestone
+  px(0,GY+61,W,70,'#464240');
+  ctx.fillStyle='#3C3A38';
+  for(var gx=0;gx<W;gx+=18){
+    for(var gy=GY+65;gy<GY+131;gy+=12){
+      var ox=(gy%24===0)?9:0;
+      ctx.fillRect(gx+ox,gy,16,10);
+    }
+  }
+  ctx.fillStyle='#353330';
+  for(var gx=1;gx<W;gx+=18){
+    for(var gy=GY+66;gy<GY+131;gy+=12){
+      var ox=(gy%24===0)?9:0;
+      ctx.fillRect(gx+ox+1,gy+1,14,8);
+    }
+  }
+  px(0,GY+58,W,4,'#888078');
+  // Fallen autumn leaves on sidewalk
+  var leafCols=['#C8620A','#A04810','#D4880A','#8B4A00'];
+  for(var i=0;i<22;i++){
+    ctx.fillStyle=leafCols[i%4];
+    ctx.fillRect(30+i*34+(Math.sin(i*2.1)*6),GY+48+Math.sin(i*1.8)*4,7,4);
+  }
+}
+
+function drawFacade(){
+  drawSky();
+  drawTrees();
+  drawSideWings();
+  drawBellTower();
+  drawMainWall();
+  drawPediment();
+  drawRosette();
+  drawPorch();
+  drawDoor();
+  drawGround();
+}
+
+// ─── SPRITES ─────────────────────────────────────────────────
+function drawPadreSprite(ox,oy,wf,onG,throwing){
+  var leg=[0,5,0,-5][wf];
+  var lean=onG?(Math.abs(leg)>2?-3:-1):0;
+  // Cassock
+  ctx.fillStyle='#111';ctx.fillRect(ox+4+lean,oy+14,19,28);
+  ctx.fillStyle='#191919';
+  ctx.beginPath();
+  ctx.moveTo(ox+2+lean,oy+38);ctx.lineTo(ox+25+lean,oy+38);
+  ctx.lineTo(ox+28,oy+50);ctx.lineTo(ox-2,oy+50);ctx.fill();
+  // Legs
+  ctx.fillStyle='#000';
+  ctx.fillRect(ox+4+leg,oy+42,8,10);ctx.fillRect(ox+14-leg,oy+42,8,10);
+  ctx.fillStyle='#2A0A00';
+  ctx.fillRect(ox+3+leg-1,oy+50,10,4);ctx.fillRect(ox+13-leg-1,oy+50,10,4);
+  // Cingulum
+  ctx.fillStyle='#EEE';ctx.fillRect(ox+4+lean,oy+28,19,2);
+  // Pectoral cross
+  ctx.fillStyle='#FFD700';
+  ctx.fillRect(ox+12+lean,oy+18,3,9);ctx.fillRect(ox+9+lean,oy+22,9,3);
+  // Collar
+  ctx.fillStyle='#FFF';ctx.fillRect(ox+8+lean,oy+13,10,5);
+  ctx.fillStyle='#DDD';ctx.fillRect(ox+10+lean,oy+13,6,4);
+  // Head
+  ctx.fillStyle='#F5C89A';ctx.fillRect(ox+6+lean,oy+3,14,13);
+  ctx.fillStyle='#222';ctx.fillRect(ox+9+lean,oy+6,2,2);ctx.fillRect(ox+14+lean,oy+6,2,2);
+  ctx.fillStyle='#5A3A1A';ctx.fillRect(ox+8+lean,oy+4,4,1);ctx.fillRect(ox+13+lean,oy+4,4,1);
+  ctx.fillStyle='#E0A07A';ctx.fillRect(ox+12+lean,oy+8,2,2);
+  ctx.fillStyle='#C06050';ctx.fillRect(ox+9+lean,oy+11,7,2);
+  // Biretta hat
+  ctx.fillStyle='#000';
+  ctx.fillRect(ox+4+lean,oy-1,18,5);ctx.fillRect(ox+7+lean,oy-6,12,6);
+  ctx.fillRect(ox+5+lean,oy-2,20,2);
+  // Red pompom
+  ctx.fillStyle='#CC0000';ctx.fillRect(ox+13+lean,oy-9,3,3);
+  // Arms
+  if(throwing){
+    ctx.fillStyle='#111';ctx.fillRect(ox+21+lean,oy+16,13,5);
+    ctx.fillStyle='#F5C89A';ctx.fillRect(ox+31+lean,oy+14,6,7);
+  } else {
+    ctx.fillStyle='#111';
+    ctx.fillRect(ox+1+lean,oy+16,5,13);ctx.fillRect(ox+20+lean,oy+16,5,13);
+    ctx.fillStyle='#F5C89A';
+    ctx.fillRect(ox+0+lean,oy+27,6,5);ctx.fillRect(ox+20+lean,oy+27,6,5);
+  }
+}
+
+function drawPlayer(){
+  if(P.inv>0&&Math.floor(P.inv/5)%2===0)return;
+  ctx.save();
+  if(P.facing===-1){ctx.translate(Math.round(P.x)+P.w,Math.round(P.y));ctx.scale(-1,1);}
+  else ctx.translate(Math.round(P.x),Math.round(P.y));
+  drawPadreSprite(0,0,P.wf,P.onG,P.cd>12);
+  ctx.restore();
+}
+
+function drawLinyera(ox,oy,type,w,h,wf,flash,hpR){
+  if(flash)ctx.globalAlpha=0.45;
+  var leg=[0,5,0,-5][wf];
+  var EC={
+    borracho:{body:'#7A3A10',skin:'#D2A080',hat:'#5A2A08',shoe:'#1A0800'},
+    rapido:{body:'#3D5A18',skin:'#C0905A',hat:'#2A3F0A',shoe:'#0A1800'},
+    grandote:{body:'#720000',skin:'#C07055',hat:'#500000',shoe:'#1A0000'},
+    loco:{body:'#3A0070',skin:'#C8906A',hat:'#25004A',shoe:'#0A0015'}
+  }[type]||{body:'#555',skin:'#AAA',hat:'#333',shoe:'#111'};
+  var cx=Math.floor(w/2)-6;
+  // Legs
+  ctx.fillStyle=EC.body;
+  ctx.fillRect(ox+2+leg,oy+h*0.58,Math.max(5,w*0.34),h*0.40);
+  ctx.fillRect(ox+w-8-leg,oy+h*0.58,Math.max(5,w*0.34),h*0.40);
+  ctx.fillStyle=EC.shoe;
+  ctx.fillRect(ox+1+leg-1,oy+h-6,w*0.40+3,5);
+  ctx.fillRect(ox+w-9-leg-1,oy+h-6,w*0.40+3,5);
+  // Body
+  ctx.fillStyle=EC.body;ctx.fillRect(ox+1,oy+h*0.28,w-2,h*0.34);
+  ctx.fillStyle='#5A3800';ctx.fillRect(ox+3,oy+h*0.33,5,6);
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  for(var i=0;i<4;i++)ctx.fillRect(ox+2+i*5,oy+h*0.60,3,5);
+  // Arms
+  ctx.fillStyle=EC.body;
+  ctx.fillRect(ox-3,oy+h*0.30,5,h*0.22);ctx.fillRect(ox+w-2,oy+h*0.30,5,h*0.22);
+  ctx.fillStyle=EC.skin;
+  ctx.fillRect(ox-4,oy+h*0.50,7,4);ctx.fillRect(ox+w-3,oy+h*0.50,7,4);
+  // Head
+  ctx.fillStyle=EC.skin;ctx.fillRect(ox+cx,oy+2,12,12);
+  ctx.fillStyle='#888';ctx.fillRect(ox+cx+1,oy+9,10,4);
+  ctx.fillStyle='#222';
+  ctx.fillRect(ox+cx+2,oy+4,3,2);ctx.fillRect(ox+cx+7,oy+4,3,2);
+  if(hpR<0.4){
+    ctx.fillStyle='#F00';
+    ctx.fillRect(ox+cx+2,oy+4,2,2);ctx.fillRect(ox+cx+3,oy+5,2,2);
+    ctx.fillRect(ox+cx+7,oy+4,2,2);ctx.fillRect(ox+cx+8,oy+5,2,2);
+  }
+  ctx.fillStyle='#882200';ctx.fillRect(ox+cx+2,oy+9,8,2);
+  // Hat
+  ctx.fillStyle=EC.hat;
+  ctx.fillRect(ox+cx-2,oy-4,16,4);ctx.fillRect(ox+cx+1,oy-8,10,5);
+  // Props
+  if(type==='borracho'){
+    ctx.fillStyle='#005500';ctx.fillRect(ox+w+1,oy+h*0.36,5,12);
+    ctx.fillStyle='#660000';ctx.fillRect(ox+w+2,oy+h*0.33,3,5);
+  } else if(type==='grandote'){
+    ctx.fillStyle=EC.body;ctx.fillRect(ox-2,oy+h*0.28,w+4,h*0.34);
+    ctx.fillStyle='rgba(0,0,0,0.15)';ctx.fillRect(ox+3,oy+h*0.42,w-6,8);
+  } else if(type==='loco'){
+    ctx.fillStyle='#FF00FF';
+    var sq=(fc>>2)%3;
+    ctx.fillRect(ox+4+sq,oy-3,4,4);ctx.fillRect(ox+w-8-sq,oy-3,4,4);
+  } else if(type==='rapido'){
+    ctx.fillStyle='rgba(200,220,80,0.35)';
+    ctx.fillRect(ox-14,oy+h*0.38,12,2);ctx.fillRect(ox-10,oy+h*0.50,8,2);
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawEnemies(){
+  var doorCx=DX+DW/2;
+  for(var i=0;i<enemies.length;i++){
+    var e=enemies[i];
+    var x=Math.round(e.x),y=Math.round(e.y);
+    ctx.save();
+    if(e.facing===1){ctx.translate(x+e.w,y);ctx.scale(-1,1);}
+    else ctx.translate(x,y);
+    drawLinyera(0,0,e.type,e.w,e.h,e.wf,e.flash>0,e.hp/e.maxHp);
+    ctx.restore();
+    if(e.tanky){
+      var bw=e.w+6;
+      px(x-3,y-8,bw,4,'#400');
+      px(x-3,y-8,Math.round(bw*e.hp/e.maxHp),4,'#F00');
+      px(x-3,y-8,Math.round(bw*e.hp/e.maxHp),2,'#FF8888');
+    }
+    // Danger indicator when close to door
+    var dist=Math.abs((e.x+e.w/2)-doorCx);
+    if(dist<160){
+      var al=1-dist/160;
+      ctx.fillStyle='rgba(255,0,0,'+(al*0.9)+')';
+      ctx.font='bold 13px monospace';ctx.textAlign='center';
+      ctx.fillText('!',x+e.w/2,y-12);
+      ctx.textAlign='left';
+    }
+  }
+  if(boss)drawBossSprite(boss);
+}
+
+function drawBossSprite(b){
+  var x=Math.round(b.x),y=Math.round(b.y);
+  if(b.flash>0)ctx.globalAlpha=0.4;
+  var leg=[0,7,0,-7][b.wf];
+  ctx.fillStyle='#3A0018';
+  ctx.fillRect(x+6+leg,y+50,18,28);ctx.fillRect(x+36-leg,y+50,18,28);
+  ctx.fillStyle='#180008';
+  ctx.fillRect(x+4+leg,y+74,22,8);ctx.fillRect(x+34-leg,y+74,22,8);
+  ctx.fillStyle='#5A0000';ctx.fillRect(x+2,y+18,56,36);
+  ctx.fillStyle='#3A0000';ctx.fillRect(x+48,y+18,10,36);
+  ctx.fillStyle='#2A0000';
+  ctx.fillRect(x+2,y+46,22,12);ctx.fillRect(x+36,y+46,22,12);
+  ctx.fillStyle='#8B6914';ctx.fillRect(x+2,y+40,56,6);
+  ctx.fillStyle='#FFD700';ctx.fillRect(x+26,y+39,8,8);
+  ctx.fillStyle='#5A0000';
+  ctx.fillRect(x-10,y+20,14,22);ctx.fillRect(x+56,y+20,14,22);
+  ctx.fillStyle='#BB7055';
+  ctx.fillRect(x-12,y+40,16,8);ctx.fillRect(x+56,y+40,16,8);
+  ctx.fillStyle='#BB7055';ctx.fillRect(x+14,y+2,32,22);
+  ctx.fillStyle='#000';
+  ctx.fillRect(x+18,y+8,7,5);ctx.fillRect(x+35,y+8,7,5);
+  ctx.fillStyle='#F00';
+  ctx.fillRect(x+20,y+9,3,3);ctx.fillRect(x+37,y+9,3,3);
+  ctx.fillStyle='#1A0000';
+  ctx.fillRect(x+16,y+6,11,3);ctx.fillRect(x+33,y+6,11,3);
+  ctx.fillStyle='#111';ctx.fillRect(x+15,y+16,30,7);
+  ctx.fillStyle='#1A0000';
+  ctx.fillRect(x+17,y+17,12,5);ctx.fillRect(x+31,y+17,12,5);
+  ctx.fillStyle='#1A0000';
+  ctx.fillRect(x+8,y-6,44,6);ctx.fillRect(x+15,y-20,30,15);
+  ctx.fillStyle='#FFD700';ctx.fillRect(x+8,y-8,44,3);
+  ctx.fillStyle='#FF4400';
+  ctx.fillRect(x+14,y-24,7,6);ctx.fillRect(x+39,y-24,7,6);
+  if(b.phase===2){
+    ctx.shadowColor='#FF3300';ctx.shadowBlur=18;
+    ctx.strokeStyle='#FF5500';ctx.lineWidth=2;
+    ctx.strokeRect(x+2,y+18,56,36);ctx.shadowBlur=0;
+  }
+  var bw=84,bx=x+b.w/2-bw/2,by2=y-16;
+  px(bx-1,by2-1,bw+2,10,'#000');px(bx,by2,bw,8,'#400');
+  px(bx,by2,Math.round(bw*b.hp/b.maxHp),8,'#FF1100');
+  px(bx,by2,Math.round(bw*b.hp/b.maxHp),4,'#FF6644');
+  ctx.fillStyle='#FFD700';ctx.font='bold 8px monospace';
+  ctx.textAlign='center';ctx.fillText('★ EL CAUDILLO ★',x+b.w/2,by2-4);
+  ctx.textAlign='left';ctx.globalAlpha=1;
+}
+
+function drawProjs(){
+  for(var i=0;i<projs.length;i++){
+    var p=projs[i];
+    ctx.save();ctx.translate(Math.round(p.x),Math.round(p.y));ctx.rotate(p.rot);
+    ctx.shadowColor='#FFD700';ctx.shadowBlur=10;
+    ctx.fillStyle='#FFD700';ctx.fillRect(-2,-9,5,18);ctx.fillRect(-8,-3,16,5);
+    ctx.fillStyle='#FFF8DC';ctx.fillRect(-1,-7,3,14);ctx.fillRect(-6,-1,12,3);
+    ctx.shadowBlur=0;ctx.restore();
+  }
+}
+
+function drawPups(){
+  for(var i=0;i<pups.length;i++){
+    var pw=pups[i];
+    var bx=Math.round(pw.x),by=Math.round(pw.y+Math.sin(pw.bob*0.08)*5);
+    ctx.shadowColor='#FFD700';ctx.shadowBlur=12;
+    if(pw.type==='cross'){
+      ctx.fillStyle='#FFD700';ctx.fillRect(bx-2,by-10,5,20);ctx.fillRect(bx-8,by-4,17,5);
+      ctx.fillStyle='#FFF8DC';ctx.fillRect(bx-1,by-8,3,16);ctx.fillRect(bx-6,by-2,13,3);
+    } else {
+      ctx.fillStyle='#006800';ctx.fillRect(bx-5,by-14,10,18);
+      ctx.fillStyle='#CC0000';ctx.fillRect(bx-3,by-12,6,10);
+      ctx.fillStyle='#FFF';ctx.font='9px monospace';ctx.fillText('\u2665',bx-4,by+4);
+    }
+    ctx.shadowBlur=0;
+  }
+}
+
+function drawParts(){
+  for(var i=0;i<parts.length;i++){
+    var p=parts[i];
+    ctx.globalAlpha=Math.max(0,p.life/p.maxLife);
+    ctx.fillStyle=p.col;
+    ctx.fillRect(Math.round(p.x-p.sz/2),Math.round(p.y-p.sz/2),Math.round(p.sz),Math.round(p.sz));
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawHUD(){
+  // Top bar
+  ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,W,40);
+  ctx.fillStyle='rgba(200,168,75,0.35)';ctx.fillRect(0,38,W,2);
+  // Score
+  ctx.fillStyle='#FFD700';ctx.font='bold 14px "Courier New",monospace';
+  ctx.fillText('SCORE: '+score,14,25);
+  // Level
+  ctx.textAlign='center';
+  ctx.fillStyle='#FFAA44';ctx.font='bold 11px monospace';
+  ctx.fillText('NIVEL '+level,W/2,25);
+  ctx.textAlign='left';
+  // Player HP
+  ctx.fillStyle='#FFD700';ctx.font='bold 10px monospace';
+  ctx.fillText('HP',W-130,14);
+  px(W-112,6,100,12,'#400');
+  var hf=Math.round(100*P.hp/P.maxHp);
+  px(W-112,6,hf,12,'#00CC00');px(W-112,6,hf,6,'#55FF77');
+  // Flash overlay
+  if(flashT>0){ctx.fillStyle='rgba(255,0,0,'+(flashT/15*0.3)+')';ctx.fillRect(0,0,W,H);}
+  // Door breach overlay
+  if(doorFlash>0){
+    ctx.fillStyle='rgba(200,0,0,'+(doorFlash/45*0.15)+')';ctx.fillRect(0,0,W,H);
+    if(doorFlash>28){
+      ctx.fillStyle='rgba(255,60,0,'+(doorFlash/45)+')';
+      ctx.font='bold 22px monospace';ctx.textAlign='center';
+      ctx.fillText('\u00a1ENTRARON!',W/2,H/2-50);ctx.textAlign='left';
+    }
+  }
+  // Boss warning
+  if(boss){
+    ctx.fillStyle='rgba(150,0,0,0.82)';ctx.fillRect(W/2-90,42,180,24);
+    ctx.fillStyle='#FFD700';ctx.font='bold 11px monospace';ctx.textAlign='center';
+    ctx.fillText('\u26a0 \u00a1JEFE ENEMIGO! \u26a0',W/2,57);ctx.textAlign='left';
+  }
+}
+
+function drawIntro(){
+  drawFacade();
+  ctx.fillStyle='rgba(0,0,0,0.80)';ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';
+  ctx.shadowColor='#C8A84B';ctx.shadowBlur=22;
+  ctx.fillStyle='#C8A84B';ctx.font='bold 36px "Courier New",monospace';
+  ctx.fillText('PADRE RUB\u00c9N',W/2,88);
+  ctx.shadowColor='#FF6600';ctx.shadowBlur=14;
+  ctx.fillStyle='#FF8822';ctx.font='bold 17px "Courier New",monospace';
+  ctx.fillText('DEFENSOR DEL CORPUS DOMINI',W/2,114);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='#9999CC';ctx.font='9px monospace';
+  ctx.fillText('Parroquia Corpus Domini \u2013 Mar\u00eda Rosa M\u00edstica \u00b7 Albari\u00f1o 256, Villa Luro',W/2,132);
+  // Walking priest
+  var af=Math.floor(fc/8)%4;
+  ctx.save();ctx.translate(W/2-14,222);drawPadreSprite(0,0,af,true,false);ctx.restore();
+  // Instructions box
+  ctx.fillStyle='rgba(0,0,0,0.88)';ctx.fillRect(W/2-235,258,470,138);
+  ctx.strokeStyle='#C8A84B';ctx.lineWidth=2;ctx.strokeRect(W/2-235,258,470,138);
+  ctx.fillStyle='#C8A84B';ctx.font='bold 11px monospace';
+  ctx.fillText('\u271d  C\u00d3MO JUGAR  \u271d',W/2,276);
+  ctx.fillStyle='#CCC';ctx.font='9px monospace';
+  ctx.fillText('Los linyeras vienen de ambos lados hacia la puerta de la iglesia.',W/2,294);
+  ctx.fillText('\u00a1Imped\u00edlos! Empez\u00e1s con 20 puntos de santidad.',W/2,308);
+  ctx.fillText('Cada linyera que entra \u2192 pierdes 1 punto. Si lleg\u00e1s a 0 \u2192 Game Over.',W/2,322);
+  ctx.fillText('\u2190 \u2192 Mover    \u2191 / Z / ESPACIO  Saltar    X / CTRL  Tirar Crucifijo',W/2,340);
+  ctx.fillText('"El Caudillo" (jefe) aparece a los 5.000 pts y vale \u22123 si entra.',W/2,356);
+  ctx.fillStyle='#888';ctx.font='8px monospace';
+  ctx.fillText('Mat\u00e1 linyeras para sumar score. Power-ups: \u271d fuego r\u00e1pido  \u2665 vida',W/2,374);
+  if(Math.floor(fc/22)%2===0){
+    ctx.shadowColor='#FFF';ctx.shadowBlur=8;ctx.fillStyle='#FFF';
+    ctx.font='bold 14px monospace';
+    ctx.fillText('\u25ba  PRESION\u00c1 ESPACIO PARA EMPEZAR  \u25c4',W/2,412);
+    ctx.shadowBlur=0;
+  }
+  ctx.textAlign='left';
+}
+
+function drawOver(){
+  drawFacade();
+  ctx.fillStyle='rgba(0,0,0,0.87)';ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';
+  ctx.shadowColor='#FF0000';ctx.shadowBlur=22;
+  ctx.fillStyle='#FF3300';ctx.font='bold 48px "Courier New",monospace';
+  var msg=doorHP<=0?'\u00a1LA IGLESIA CAY\u00d3!':'GAME OVER';
+  ctx.fillText(msg,W/2,138);ctx.shadowBlur=0;
+  ctx.fillStyle='#AAA';ctx.font='13px monospace';
+  var sub=doorHP<=0?'Los linyeras tomaron el Corpus Domini...':'El Padre Rub\u00e9n cay\u00f3 en batalla...';
+  ctx.fillText(sub,W/2,168);
+  ctx.fillStyle='#C8A84B';ctx.font='bold 20px monospace';
+  ctx.fillText('PUNTAJE FINAL: '+score,W/2,210);
+  ctx.fillStyle='#AAA';ctx.font='11px monospace';
+  ctx.fillText('Nivel: '+level+'    Santidad final: '+doorHP+'/20',W/2,232);
+  var rats=[[0,'Ni defendiste la puerta, Padre...'],[500,'Bah, falt\u00f3 empe\u00f1o'],[2000,'\u271d Buen combate, siervo fiel'],[5000,'\u26a1 \u00a1Crack! El barrio te recuerda'],[8000,'\ud83c\udfc6 \u00a1Leyenda de Villa Luro!'],[15000,'\ud83d\udc51 \u00a1Santo del Corpus Domini!']];
+  var rat=rats[0][1];
+  for(var i=0;i<rats.length;i++){if(score>=rats[i][0])rat=rats[i][1];}
+  ctx.fillStyle='#FF9900';ctx.font='12px monospace';ctx.fillText(rat,W/2,262);
+  ctx.save();ctx.translate(W/2-14,298);drawPadreSprite(0,0,2,true,false);ctx.restore();
+  if(Math.floor(fc/22)%2===0){
+    ctx.fillStyle='#FFF';ctx.font='bold 13px monospace';
+    ctx.fillText('PRESION\u00c1 ESPACIO PARA REINTENTAR',W/2,402);
+  }
+  ctx.textAlign='left';
+}
+
+// ─── MAIN LOOP ───────────────────────────────────────────────
+function render(){
+  ctx.save();
+  ctx.translate(Math.round(shX),Math.round(shY));
+  if(gs==='intro'){
+    drawIntro();
+  } else if(gs==='over'){
+    drawOver();
+  } else {
+    drawFacade();
+    drawParts();
+    drawPups();
+    drawProjs();
+    drawEnemies();
+    drawPlayer();
+    drawHUD();
+  }
+  ctx.restore();
+}
+
+function loop(){
+  if(gs==='game')gameUpdate();
+  fc++;
+  render();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
